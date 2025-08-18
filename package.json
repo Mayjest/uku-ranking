@@ -1,0 +1,26 @@
+{
+  "name": "uku-ranking",
+  "version": "1.0.0",
+  "main": "Code.js",
+  "scripts": {
+    "build": "rollup --config"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "description": "",
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/plugin-transform-runtime": "^7.28.0",
+    "@babel/preset-env": "^7.28.0",
+    "@babel/preset-typescript": "^7.27.1",
+    "@google/clasp": "^3.0.6-alpha",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/google-apps-script": "^1.0.99",
+    "@types/node": "^24.0.14",
+    "rollup": "^4.45.1",
+    "typescript": "^5.8.3"
+  }
+}
