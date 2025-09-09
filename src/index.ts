@@ -22,11 +22,11 @@ function runRankingAlgorithm() {
         return;
     }
     spreadSheet.toast('Configuration found for data set: ' + config.dataSetName + '. Preparing data for mixed division.');
-    prepareData(spreadSheet, config, 'mixed');
+    const mixedData = prepareData(spreadSheet, config, 'mixed');
     spreadSheet.toast('Data prepared for mixed. Preparing data for open division.');
-    prepareData(spreadSheet, config, 'open');
+    const openData = prepareData(spreadSheet, config, 'open');
     spreadSheet.toast('Data prepared for open. Preparing data for women\'s division.');
-    prepareData(spreadSheet, config, 'women');
+    const womensData = prepareData(spreadSheet, config, 'women');
     spreadSheet.toast('Data prepared for all divisions. Calculating rankings for mixed');
 
 

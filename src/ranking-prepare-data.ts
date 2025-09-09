@@ -1,4 +1,3 @@
-import { stream } from "undici-types";
 import { AlgorithmConfig } from "./global";
 
 interface GameRow {
@@ -23,10 +22,36 @@ interface TournamentSummary {
     games_count: number;
 }
 
+interface TeamSummary {
+    team: string;
+    tournaments: number;
+    games: number;
+    wins: number;
+    losses: number;
+    w_ratio: number;
+    opponent_w_ratio: number;
+    goals_for: number;
+    goals_against: number;
+    avg_point_diff: number;
+    component: number;
+    interconnectivity: number;
+    eligible: number;
+}
+
+interface PreparedData {
+    games: GameRow[];
+    teams: string[];
+    teamsAtTournaments: TeamAtTournament[];
+    teamsInGames: string[];
+    tournamentSummaries: TournamentSummary[];
+    gamesGraph: string[][];
+    teamSummary: TeamSummary[];
+}
+
 function prepareData(
     spreadSheet: GoogleAppsScript.Spreadsheet.Spreadsheet,
     config: AlgorithmConfig,
-    division: 'mixed' | 'open' | 'women'): boolean {
+    division: 'mixed' | 'open' | 'women'): PreparedData {
 
     // Games is all the games played
     // Teams is all teams that play in a season & any aliases they have
@@ -53,6 +78,10 @@ function prepareData(
     if (!teamsAtTournamentsSheet) {
         throw new Error(`Teams at tournaments sheet named "${teamsAtTournamentsSheetName}" not found.`);
     }
+
+    const minTournamentsSetting = config.algorithmSettings.find(s => s.name === 'min_tournaments')?.value as number ?? 1;
+    const minGamesSetting = config.algorithmSettings.find(s => s.name === 'min_games')?.value as number ?? 5;
+    const minInterconnectivitySetting = config.algorithmSettings.find(s => s.name === 'min_interconnectivity')?.value as number ?? 10;
 
     // Grab the data from the sheets
     const gamesData = gamesSheet.getDataRange().getValues();
@@ -81,15 +110,29 @@ function prepareData(
     games = validateTeams(games, teamsAtTournaments);
 
     games = processGames(games)
-    streamToTable(games, ['Tournament', 'Date', 'Team1', 'Team2', 'Score1', 'Score2'], spreadSheet, config.dataSetName + ' Processed Games ' + division);
+    // streamToTable(games, ['Tournament', 'Date', 'Team1', 'Team2', 'Score1', 'Score2'], spreadSheet, config.dataSetName + ' Processed Games ' + division);
 
     const teamsInGames = getTeamsInGames(games);
-    streamToTable(teamsInGames, ['Teams in Games'], spreadSheet, config.dataSetName + ' Teams in Games ' + division);
+    // streamToTable(teamsInGames, ['Teams in Games'], spreadSheet, config.dataSetName + ' Teams in Games ' + division);
 
     const tournamentSummaries = getSummaryOfTournaments(games);
-    streamToTable(tournamentSummaries, ['Date First', 'Date Last', 'Teams Count Qualified', 'Teams Count Total', 'Games Count'], spreadSheet, config.dataSetName + ' Tournament Summaries ' + division);
+    // streamToTable(tournamentSummaries, ['Date First', 'Date Last', 'Teams Count Qualified', 'Teams Count Total', 'Games Count'], spreadSheet, config.dataSetName + ' Tournament Summaries ' + division);
 
-    return false
+    const gamesGraph = getGamesMatrix(games, teamsInGames);
+    // streamToTable(gamesGraph, null, spreadSheet, config.dataSetName + ' Games Matrix ' + division);
+
+    const teamSummary = getGamesSummary(games, teamsInGames, gamesGraph, minTournamentsSetting, minGamesSetting, minInterconnectivitySetting);
+    // streamToTable(teamSummary, ['Team', 'Tournaments', 'Games', 'Wins', 'Losses', 'Win Ratio', 'Opp Win Ratio', 'Goals For', 'Goals Against', 'Avg Point Diff', 'Component', 'Interconnectivity', 'Eligible'], spreadSheet, config.dataSetName + ' Team Summary ' + division);
+
+    return {
+        games,
+        teams,
+        teamsAtTournaments,
+        teamsInGames,
+        tournamentSummaries,
+        gamesGraph,
+        teamSummary
+    }
 }
 
 function processGames(games: GameRow[], removeDraws: boolean = false): GameRow[] {
@@ -184,6 +227,139 @@ function getSummaryOfTournaments(games: GameRow[], asIfDate: Date | null = null)
     })
 }
 
+function getGamesMatrix(games: GameRow[], teamsInGames: string[]): string[][] {
+    // Return a matrix of games between teams 
+    // e.g.
+    // Team, Team1, Team2, Team3, Team4
+    // Team1, 0, 1, 0, 0
+    // Team2, 1, 0, 1, 0
+    // Team3, 0, 1, 0, 1
+    // Team4, 0, 0, 1, 0
+
+    const matrix: string[][] = [];
+    // Add the header row
+    matrix.push(['Team', ...teamsInGames]);
+
+    for (const team1 of teamsInGames) {
+        const row: string[] = [team1];
+        for (const team2 of teamsInGames) {
+            if (team1 === team2) {
+                row.push('0'); // No games against itself
+            } else {
+                // Count the number of games between team1 and team2
+                const count = games.filter(game => (game.team1 === team1 && game.team2 === team2) || (game.team1 === team2 && game.team2 === team1)).length;
+                row.push(count.toString());
+            }
+        }
+        matrix.push(row);
+    }
+    return matrix;
+}
+
+function getGamesSummary(games: GameRow[], teams: string[], gamesMatrix: string[][], minTournaments: number, minGames: number, minInterconnectivy: number): TeamSummary[] {
+    const shortestPaths = deriveShortestPaths(games, teams, gamesMatrix);
+
+    const summaries: TeamSummary[] = teams.map((team) => {
+        const tournamentsCount = new Set(games.filter(game => game.team1 === team || game.team2 === team).map(game => game.tournament)).size;
+        const teamGames = games.filter(game => game.team1 === team || game.team2 === team);
+        const wins = teamGames.filter(game => game.team1 === team && game.score1 > game.score2).length;
+        const losses = teamGames.filter(game => game.team2 === team && game.score2 > game.score1).length;
+        const goalsFor = teamGames.reduce((sum, game) => {
+            if (game.team1 === team) {
+                return sum + game.score1;
+            } else {
+                return sum + game.score2;
+            }
+        }, 0);
+        const goalsAgainst = teamGames.reduce((sum, game) => {
+            if (game.team1 === team) {
+                return sum + game.score2;
+            } else {
+                return sum + game.score1;
+            }
+        }, 0);
+        const avgPointDiff = teamGames.length > 0 ? (goalsFor - goalsAgainst) / teamGames.length : 0;
+        const wRatio = (teamGames.length) > 0 ? wins / (teamGames.length) : 0;
+        const oppWinRatio = (teamGames.length) > 0 ? losses / (teamGames.length) : 0;
+        const component = 1; // Placeholder, but always seems to be 1 in the python version, sooo?
+        const shortestPathsForThisTeam = shortestPaths.find((row: string[]) => row[0] === team);
+        const interconnectivity = shortestPathsForThisTeam ? shortestPathsForThisTeam.slice(1).reduce((sum, path) => {
+            const pathNum = parseInt(path);
+            if (pathNum >= 1 && pathNum <= 2) {
+                return sum + pathNum;
+            }
+            return sum;
+        }, 0) : 0;
+        const eligible = (tournamentsCount >= minTournaments && teamGames.length >= minGames && interconnectivity >= minInterconnectivy) ? 1 : 0;
+        return {
+            team,
+            tournaments: tournamentsCount,
+            games: teamGames.length,
+            wins,
+            losses,
+            w_ratio: wRatio,
+            opponent_w_ratio: oppWinRatio,
+            goals_for: goalsFor,
+            goals_against: goalsAgainst,
+            avg_point_diff: avgPointDiff,
+            component,
+            interconnectivity,
+            eligible
+        };
+    });
+    return summaries;
+}
+
+function deriveShortestPaths(games: GameRow[], teams: string[], gamesMatrix: string[][]): string[][] {
+    // Get the information about the shortest paths between each pair of teams in the dataset (teams that played
+    // a game together have distance 1, teams that share a common opponent have distance 2, etc.).
+
+
+    const allPaths = teams.map(team => {
+        // need to iterate over each team and find the shortest path to every other team
+        const paths = [team];
+        for (const otherTeam of teams) {
+            if (otherTeam === team) {
+                paths.push('0')
+                continue
+            }
+            // Find the index of the team in the gamesMatrix
+            const teamIndex = gamesMatrix[0].indexOf(team);
+            const otherTeamIndex = gamesMatrix[0].indexOf(otherTeam);
+            if (teamIndex === -1 || otherTeamIndex === -1) {
+                paths.push('999'); // Not found, so infinite distance
+                continue;
+            }
+            // If they played each other, distance is 1
+            if (gamesMatrix[teamIndex][otherTeamIndex] !== '0') {
+                paths.push('1');
+                continue;
+            }
+            // Otherwise, find if they have a common opponent
+            let foundCommonOpponent = false;
+            for (const potentialOpponent of teams) {
+                if (potentialOpponent === team || potentialOpponent === otherTeam) continue;
+                const potentialOpponentIndex = gamesMatrix[0].indexOf(potentialOpponent);
+                if (potentialOpponentIndex === -1) continue;
+                if (gamesMatrix[teamIndex][potentialOpponentIndex] !== '0' && gamesMatrix[otherTeamIndex][potentialOpponentIndex] !== '0') {
+                    // They have a common opponent
+                    paths.push('2');
+                    foundCommonOpponent = true;
+                    break;
+                }
+            }
+            if (foundCommonOpponent) continue;
+
+            // If no common opponent, distance is 3 (although we can go further, it's not used right now so not needed)
+            paths.push('3');
+        }
+        return paths;
+    });
+
+    return allPaths;
+}
+
+
 function validateTeams(games: GameRow[], teamsAtTournaments: TeamAtTournament[]): GameRow[] {
     return games.map((game) => {
         // for each game, if team1 or team2 is not in the teamsAtTournamentsData for that specific tournament, 
@@ -246,7 +422,7 @@ function getTeamIfAlias(team: string, teamsData: any[][]): string {
     return team; // If no alias found, return the original team name
 }
 
-function streamToTable(data: GameRow[] | TournamentSummary[] | string[], headers: String[], spreadSheet: GoogleAppsScript.Spreadsheet.Spreadsheet, sheetName: string) {
+function streamToTable(data: GameRow[] | TournamentSummary[] | TeamSummary[] | string[] | string[][], headers: String[] | null, spreadSheet: GoogleAppsScript.Spreadsheet.Spreadsheet, sheetName: string) {
     // Create or get the sheet for the data
     let dataSheet = spreadSheet.getSheetByName(sheetName);
     if (!dataSheet) {
@@ -257,7 +433,9 @@ function streamToTable(data: GameRow[] | TournamentSummary[] | string[], headers
 
     // Set the header row based on the type of data
     if (data.length > 0) {
-        dataSheet.appendRow(headers);
+        if (headers) {
+            dataSheet.appendRow(headers);
+        }
 
         // Append each data row
         for (const row of data) {
