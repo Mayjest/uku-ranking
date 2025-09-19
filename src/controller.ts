@@ -1,11 +1,13 @@
 import { config } from "process";
 import { controllerSheetName } from "./global";
 
+export const ignoreBlowoutsSettingName = 'Ignore Blowouts';
+
 const base_settings = [
   { name: 'Minimum Tournaments', defaultValue: 1, note: null },
   { name: 'Minimum Games', defaultValue: 5, note: null },
   { name: 'Minimum Interconnectivity', defaultValue: 30, note: 'Interconnectivity is a score given to a team based on how many other teams it has played against and how many games those teams have played against others. A lot of games against only repeated opponents gives a lower score.' },
-  { name: 'Ignore Blowouts', defaultValue: true, note: 'If true, games with a score difference (score_w > 2*score_l + 1), a rating difference of > 600 and where the winner already has 5 games will be removed from the list.' }
+  { name: ignoreBlowoutsSettingName, defaultValue: true, note: 'If true, games with a score difference (score_w > 2*score_l + 1), a rating difference of > 600 and where the winner already has 5 games will be removed from the list.' }
 ];
 
 export function handleControllerUpdate(spreadSheet: GoogleAppsScript.Spreadsheet.Spreadsheet) {

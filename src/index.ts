@@ -1,5 +1,6 @@
 import { handleControllerUpdate } from "./controller";
 import { AlgorithmConfig, controllerSheetName } from "./global";
+import { calculateRankings } from "./ranking-calculate";
 import { prepareData } from "./ranking-prepare-data";
 import { gatherConfig } from "./ranking-setup";
 
@@ -28,6 +29,12 @@ function runRankingAlgorithm() {
     spreadSheet.toast('Data prepared for open. Preparing data for women\'s division.');
     const womensData = prepareData(spreadSheet, config, 'women');
     spreadSheet.toast('Data prepared for all divisions. Calculating rankings for mixed');
+    calculateRankings(spreadSheet, config, mixedData, 'mixed');
+
+    // vbpjuytghtgyhuioplkmnbvgfgtrgfhuyhjiookllppffrrsxzwsewdrftgyghujikolp;;;;
+    // Evie added her own spin above :)
+
+
 
 
 
